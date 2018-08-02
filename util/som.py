@@ -34,6 +34,7 @@ class SOM():
         self.max_iteration = 60
 
         self.gpu_id = gpu_id
+        self.device = torch.device("cuda:%d" % gpu_id)
 
         # node: Cx(rowsxcols), tensor
         self.node = torch.FloatTensor(self.dim, self.rows * self.cols).zero_()
@@ -258,12 +259,8 @@ class BatchSOM():
         mask = torch.eq(min_idx_expanded, node_idx_list).int()  # BxNxnode_numxk
         # mask = torch.sum(mask, dim=3)  # BxNxnode_num
 
-        mask_list, min_idx_list = [], []
-        for i in range(k):
-            mask_list.append(mask[..., i])
-            min_idx_list.append(min_idx[..., i])
-        mask = torch.cat(tuple(mask_list), dim=1)  # BxkNxnode_num
-        min_idx = torch.cat(tuple(min_idx_list), dim=1)  # BxkN
+        mask = torch.cat([mask[..., i] for i in range(k)], dim=1)  # Bx kNx node_num
+        min_idx = torch.cat([min_idx[..., i] for i in range(k)], dim=1)  # BxkN
         mask_row_max, _ = torch.max(mask, dim=1)  # Bxnode_num, this indicates whether the node has nearby x
 
         return mask, mask_row_max, min_idx

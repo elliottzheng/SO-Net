@@ -174,7 +174,7 @@ class SOM():
 
 
 class BatchSOM():
-    def __init__(self, rows=4, cols=4, dim=3, gpu_id=0, batch_size=10):
+    def __init__(self, rows=4, cols=4, dim=3, gpu_id=None, batch_size=10):
         self.rows = rows
         self.cols = cols
         self.dim = dim
@@ -182,10 +182,11 @@ class BatchSOM():
 
         self.sigma = 0.4
         self.learning_rate = 0.5
-        self.max_iteration = 30
+        self.max_iteration = 60
 
         self.gpu_id = gpu_id
-        self.device = torch.device("cuda:%d" % gpu_id)
+        assert gpu_id >= 0
+        self.device = torch.device("cuda:%d"%(gpu_id) if torch.cuda.is_available() else "cpu")
         self.batch_size = batch_size
 
         # node: BxCx(rowsxcols), tensor
@@ -236,7 +237,7 @@ class BatchSOM():
 
     def query_topk(self, x, k):
         '''
-        :param x: input data CxN tensor
+        :param x: input data BxCxN tensor
         :param k: topk
         :return: mask: Nxnode_num
         '''
@@ -254,16 +255,12 @@ class BatchSOM():
         min_idx_expanded = min_idx.unsqueeze(2).expand(min_idx.size()[0], min_idx.size()[1], self.rows * self.cols,
                                                        k)  # BxNxnode_numxk
 
-        node_idx_list = self.node_idx_list.unsqueeze(0).unsqueeze(0).unsqueeze(3).expand_as(
-            min_idx_expanded).long()  # BxNxnode_numxk
-        mask = torch.eq(min_idx_expanded, node_idx_list).float()  # BxNxnode_numxk
+        node_idx_list = self.node_idx_list.unsqueeze(0).unsqueeze(0).unsqueeze(3).expand_as(min_idx_expanded).long()  # BxNxnode_numxk
+        mask = torch.eq(min_idx_expanded, node_idx_list).int()  # BxNxnode_numxk
         # mask = torch.sum(mask, dim=3)  # BxNxnode_num
-        if k == 2:
-            mask = torch.cat((mask[..., 0], mask[..., 1]), dim=1)  # BxkNxnode_num
-            min_idx = torch.cat((min_idx[..., 0], min_idx[..., 1]), dim=1)  # BxkN
-        elif k == 3:
-            mask = torch.cat((mask[..., 0], mask[..., 1], mask[..., 2]), dim=1)  # BxkNxnode_num
-            min_idx = torch.cat((min_idx[..., 0], min_idx[..., 1], min_idx[..., 2]), dim=1)  # BxkN
+
+        mask = torch.cat([mask[..., i] for i in range(k)], dim=1)  # Bx kNx node_num
+        min_idx = torch.cat([min_idx[..., i] for i in range(k)], dim=1)  # BxkN
         mask_row_max, _ = torch.max(mask, dim=1)  # Bxnode_num, this indicates whether the node has nearby x
 
         return mask, mask_row_max, min_idx
@@ -361,8 +358,8 @@ class BatchSOM():
             self.batch_update(x, learning_rate, sigma)
         for iter in range(self.max_iteration):
             # get learning_rate and sigma
-            learning_rate = self.learning_rate / (1 + iter / self.max_iteration)
-            sigma = self.sigma / (1 + iter / self.max_iteration)
-            self.batch_update(x, iter, learning_rate, sigma)
+            learning_rate = self.learning_rate / (1 + 2*iter / self.max_iteration)
+            sigma = self.sigma / (1 + 2*iter / self.max_iteration)
+            self.batch_update(x, learning_rate, sigma)
 
 
